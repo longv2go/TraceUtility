@@ -79,11 +79,51 @@ int main(int argc, const char * argv[]) {
                         }
                         return nodes;
                     };
-                    NSMutableArray<PFTCallTreeNode *> *nodes = flattenTree(backtraceRepository.rootNode);
-                    [nodes sortUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(terminals)) ascending:NO]]];
-                    for (PFTCallTreeNode *node in nodes) {
-                        TUPrint(@"%@ %@ %ims\n", node.libraryName, node.symbolName, node.terminals);
+                    
+                    static NSMutableArray<PFTCallTreeNode *> * (^const folded_call)(PFTCallTreeNode *) = ^(PFTCallTreeNode *rootNode) {
+                        NSMutableArray *nodes = [NSMutableArray array];
+                        if (rootNode) {
+                            if (!rootNode.children || rootNode.children.count == 0) {
+                                [nodes addObject:rootNode];
+                            } else {
+                                for (PFTCallTreeNode *node in rootNode.children) {
+                                    [nodes addObjectsFromArray:folded_call(node)];
+                                }
+                            }
+                        }
+                        return nodes;
+                    };
+                    
+                    void (^printf_leaf)(PFTCallTreeNode *) = ^(PFTCallTreeNode *leaf) {
+                        NSMutableArray *call_stack = [NSMutableArray array];
+                        [call_stack addObject:leaf];
+                        
+                        PFTCallTreeNode *node = leaf;
+                        while (node.parent) {
+                            [call_stack insertObject:node.parent atIndex:0];
+                            node = node.parent;
+                        }
+                        
+                        for (PFTCallTreeNode *node in call_stack) {
+                            if (!node.symbolName || node.symbolName.length == 0) {
+                                continue;
+                            }
+                            printf("%s`%s;", node.libraryName.UTF8String, node.symbolName.UTF8String);
+                        }
+                        printf("    %i\n",leaf.terminals);
+                    };
+                    
+//                    NSMutableArray<PFTCallTreeNode *> *nodes = flattenTree(backtraceRepository.rootNode);
+                    NSMutableArray<PFTCallTreeNode *> *leafs = folded_call(backtraceRepository.rootNode);
+                    for (PFTCallTreeNode *leaf in leafs) {
+                        printf_leaf(leaf);
                     }
+                    
+                    
+//                    [nodes sortUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:NSStringFromSelector(@selector(terminals)) ascending:NO]]];
+//                    for (PFTCallTreeNode *node in nodes) {
+//                        TUPrint(@"%@ %@ %ims\n", node.libraryName, node.symbolName, node.terminals);
+//                    }
                 } else if ([instrumentID isEqualToString:@"com.apple.xray.instrument-type.oa"]) {
                     // Allocations: print out the memory allocated during each second in descending order of the size.
                     XRObjectAllocInstrument *allocInstrument = (XRObjectAllocInstrument *)container;
